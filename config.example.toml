@@ -1,0 +1,11 @@
+# ubuntu-assist configuration
+# Place this file at ~/.config/ubuntu-assist/config.toml
+# or at ~/.ubuntu-assist.toml
+
+# Your Anthropic API key (or set ANTHROPIC_API_KEY env var)
+api_key = "sk-ant-..."
+
+# Model to use. Some options:
+#   claude-sonnet-4-20250514     (fast, cheap, good for most queries)
+#   claude-opus-4-20250514       (most capable, slower, pricier)
+model = "claude-sonnet-4-20250514"
