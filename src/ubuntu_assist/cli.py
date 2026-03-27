@@ -93,11 +93,32 @@ def print_tool_call(name: str, input_data: dict):
     console.print(f"  [dim]⚙ {name}[/dim] [dim italic]{summary}[/dim italic]")
 
 
-def run_agent(question: str, api_key: str, model: str, verbose: bool = False):
+def print_token_usage(input_tokens: int, output_tokens: int, session_input: int = 0, session_output: int = 0):
+    """Display token usage statistics."""
+    total = input_tokens + output_tokens
+    console.print(
+        f"[dim]Tokens: {total:,} total ({input_tokens:,} input, {output_tokens:,} output)[/dim]"
+    )
+    if session_input > 0 or session_output > 0:
+        session_total = session_input + session_output
+        console.print(
+            f"[dim]Session: {session_total:,} total ({session_input:,} input, {session_output:,} output)[/dim]"
+        )
+
+
+def run_agent(question: str, api_key: str, model: str, verbose: bool = False, session_tokens: dict | None = None):
     client = anthropic.Anthropic(api_key=api_key)
     system = build_system_prompt()
 
     messages = [{"role": "user", "content": question}]
+    
+    # Track token usage
+    total_input_tokens = 0
+    total_output_tokens = 0
+    
+    # Initialize session tokens if provided
+    if session_tokens is None:
+        session_tokens = {"input": 0, "output": 0}
 
     console.print()
     console.print("[bold cyan]Thinking…[/bold cyan]")
@@ -132,6 +153,13 @@ def run_agent(question: str, api_key: str, model: str, verbose: bool = False):
             console.print("\n[bold red]Connection error.[/] Check your internet connection.")
             sys.exit(1)
 
+        # Track token usage from this response
+        if hasattr(response, 'usage'):
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+            session_tokens["input"] += response.usage.input_tokens
+            session_tokens["output"] += response.usage.output_tokens
+
         # Collect assistant content blocks
         assistant_content = response.content
 
@@ -145,6 +173,12 @@ def run_agent(question: str, api_key: str, model: str, verbose: bool = False):
             console.print()
             console.print(Markdown(full_text))
             console.print()
+            print_token_usage(
+                total_input_tokens, 
+                total_output_tokens,
+                session_tokens["input"],
+                session_tokens["output"]
+            )
             return
 
         # There are tool calls — execute them all
@@ -168,6 +202,12 @@ def run_agent(question: str, api_key: str, model: str, verbose: bool = False):
         messages.append({"role": "user", "content": tool_results})
 
     console.print("[yellow]Reached maximum iterations, stopping.[/yellow]")
+    print_token_usage(
+        total_input_tokens, 
+        total_output_tokens,
+        session_tokens["input"],
+        session_tokens["output"]
+    )
 
 
 def main():
@@ -196,16 +236,30 @@ def main():
     else:
         # Interactive mode
         console.print("[dim]Interactive mode. Type 'exit' or Ctrl+C to quit.[/dim]\n")
+        session_tokens = {"input": 0, "output": 0}
         while True:
             try:
                 question = console.input("[bold green]❯[/bold green] ")
                 if question.strip().lower() in ("exit", "quit", "q"):
+                    if session_tokens["input"] > 0 or session_tokens["output"] > 0:
+                        console.print()
+                        total = session_tokens["input"] + session_tokens["output"]
+                        console.print(
+                            f"[dim]Total session usage: {total:,} tokens "
+                            f"({session_tokens['input']:,} input, {session_tokens['output']:,} output)[/dim]"
+                        )
                     break
                 if not question.strip():
                     continue
-                run_agent(question, api_key, model, verbose=args.verbose)
+                run_agent(question, api_key, model, verbose=args.verbose, session_tokens=session_tokens)
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[dim]Bye.[/dim]")
+                if session_tokens["input"] > 0 or session_tokens["output"] > 0:
+                    total = session_tokens["input"] + session_tokens["output"]
+                    console.print(
+                        f"[dim]Total session usage: {total:,} tokens "
+                        f"({session_tokens['input']:,} input, {session_tokens['output']:,} output)[/dim]"
+                    )
                 break
 
 
