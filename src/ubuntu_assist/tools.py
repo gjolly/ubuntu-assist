@@ -67,7 +67,7 @@ def tool_read_file(path: str, max_lines: int = 500) -> str:
     if not os.access(path, os.R_OK):
         return f"Permission denied: {path}"
     if os.path.isdir(path):
-        return f"Path is a directory. Use list_directory instead."
+        return "Path is a directory. Use list_directory instead."
     try:
         with open(path, "r", errors="replace") as f:
             lines = []
@@ -82,6 +82,24 @@ def tool_read_file(path: str, max_lines: int = 500) -> str:
         return result
     except Exception as e:
         return f"Error reading file: {e}"
+
+
+def tool_grep_file(path: str, regexp: str, max_lines: int = 500) -> str:
+    """Look for a regular expression in a file using grep."""
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        return f"File not found: {path}"
+    if not os.access(path, os.R_OK):
+        return f"Permission denied: {path}"
+    if os.path.isdir(path):
+        return "Path is a directory. Use list_directory instead."
+
+    cmd = ["grep", regexp, path]
+    result = _run(cmd, timeout=10)
+    lines = result.strip().split("\n")
+    if len(lines) > max_lines:
+        lines = lines[:max_lines] + [f"[…{len(lines) - max_lines} more results]"]
+    return "\n".join(lines)
 
 
 def tool_list_directory(path: str) -> str:
@@ -164,33 +182,6 @@ def tool_which(command: str) -> str:
     return _run(["which", command])
 
 
-def tool_run_command(command: str) -> str:
-    """Run an arbitrary read-only shell command. Only informational commands are allowed."""
-    # Block obviously dangerous commands
-    blocked = ["rm", "mv", "cp", "dd", "mkfs", "fdisk", "parted",
-               "shutdown", "reboot", "poweroff", "halt", "init",
-               "kill", "killall", "pkill",
-               "apt install", "apt remove", "apt purge", "apt-get install",
-               "apt-get remove", "dpkg -i", "dpkg --remove",
-               "snap install", "snap remove",
-               "chmod", "chown", "chgrp",
-               "useradd", "userdel", "usermod", "groupadd",
-               "iptables", "ufw",
-               "mount", "umount",
-               "systemctl start", "systemctl stop", "systemctl restart",
-               "systemctl enable", "systemctl disable",
-               ">", ">>", "tee",
-               "curl", "wget",  # no downloading
-               "python", "perl", "ruby", "bash -c", "sh -c", "eval",
-               "sudo", "su ",
-               ]
-    cmd_lower = command.lower().strip()
-    for b in blocked:
-        if b in cmd_lower:
-            return f"Blocked: '{b}' is not allowed. This tool is read-only."
-    return _run(["bash", "-c", command], timeout=10)
-
-
 # ---------------------------------------------------------------------------
 # Tool schema for the API
 # ---------------------------------------------------------------------------
@@ -230,6 +221,19 @@ TOOLS_SCHEMA = [
             },
             "required": ["path"],
         },
+    },
+    {
+        "name": "grep_file",
+        "description": "Look for a regular expression in a file using Grep. Use this to avoid reading entire large files and look for specific things in text files.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Absolute or ~ path to the file"},
+                "regexp": {"type": "string", "description": "The regular expression to pass the the grep command"},
+                "max_lines": {"type": "integer", "description": "Max lines to read (default 500)", "default": 500},
+            },
+            "required": ["path", "regexp"],
+        }
     },
     {
         "name": "list_directory",
@@ -354,17 +358,6 @@ TOOLS_SCHEMA = [
             "required": ["command"],
         },
     },
-    {
-        "name": "run_command",
-        "description": "Run a read-only shell command for information gathering. Write operations, sudo, and network commands are blocked. Use this for commands not covered by other tools, e.g. 'lsblk', 'ip addr', 'ps aux', 'cat /proc/cpuinfo'.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "Shell command to run (read-only only)"},
-            },
-            "required": ["command"],
-        },
-    },
 ]
 
 
@@ -373,6 +366,7 @@ _DISPATCH = {
     "read_manpage": lambda args: tool_read_manpage(args["page"], args.get("section")),
     "search_manpages": lambda args: tool_search_manpages(args["query"]),
     "read_file": lambda args: tool_read_file(args["path"], args.get("max_lines", 500)),
+    "grep_file": lambda args: tool_grep_file(args["path"], args["regexp"], args.get("max_lines", 500)),
     "list_directory": lambda args: tool_list_directory(args["path"]),
     "find_files": lambda args: tool_find_files(args["pattern"], args.get("directory", "/")),
     "search_installed_packages": lambda args: tool_search_installed_packages(args["query"]),
@@ -385,7 +379,6 @@ _DISPATCH = {
     "check_updates": lambda args: tool_check_updates(),
     "system_info": lambda args: tool_system_info(),
     "which": lambda args: tool_which(args["command"]),
-    "run_command": lambda args: tool_run_command(args["command"]),
 }
 
 

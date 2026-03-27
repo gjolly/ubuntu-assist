@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ubuntu-assist"
+version = "0.1.0"
+description = "An agentic CLI that answers Ubuntu questions using Claude and local system tools."
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic",
+    "rich",
+]
+
+[project.scripts]
+ubuntu-assist = "ubuntu_assist.cli:main"

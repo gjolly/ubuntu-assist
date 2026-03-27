@@ -5,6 +5,7 @@ import sys
 import os
 import json
 import argparse
+import getpass
 import tomllib
 from pathlib import Path
 
@@ -14,35 +15,73 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
-from tools import TOOLS_SCHEMA, execute_tool
-from system_prompt import build_system_prompt
+from ubuntu_assist.tools import TOOLS_SCHEMA, execute_tool
+from ubuntu_assist.system_prompt import build_system_prompt
 
-CONFIG_PATHS = [
-    Path.home() / ".config" / "ubuntu-assist" / "config.toml",
-    Path.home() / ".ubuntu-assist.toml",
+CONFIG_PATH = Path.home() / ".config" / "ubuntu-assist" / "config.toml"
+
+MODELS = [
+    ("claude-sonnet-4-20250514", "Sonnet 4 — fast, good for most queries"),
+    ("claude-opus-4-20250514", "Opus 4 — most capable, slower, pricier"),
+    ("claude-haiku-4-5-20251001", "Haiku 4.5 — fastest, cheapest"),
 ]
+DEFAULT_MODEL = MODELS[0][0]
 
 console = Console()
 
 
 def load_config() -> dict:
-    for p in CONFIG_PATHS:
-        if p.exists():
-            with open(p, "rb") as f:
-                return tomllib.load(f)
+    if CONFIG_PATH.exists():
+        with open(CONFIG_PATH, "rb") as f:
+            return tomllib.load(f)
     return {}
+
+
+def run_setup() -> dict:
+    """Interactive first-run setup — prompts for API key and model, writes config."""
+    console.print(
+        Panel(
+            "[bold]Welcome to ubuntu-assist![/bold]\n"
+            "Let's set up your configuration.",
+            border_style="blue",
+        )
+    )
+
+    console.print("\nYou'll need an Anthropic API key.")
+    console.print("[dim]Get one at https://console.anthropic.com/settings/keys[/dim]\n")
+    api_key = getpass.getpass("API key: ").strip()
+    if not api_key:
+        console.print("[bold red]No API key provided. Exiting.[/bold red]")
+        sys.exit(1)
+
+    console.print("\n[bold]Choose a model:[/bold]")
+    for i, (model_id, description) in enumerate(MODELS, 1):
+        marker = " [cyan](default)[/cyan]" if i == 1 else ""
+        console.print(f"  {i}. {model_id} — {description}{marker}")
+    choice = console.input(f"\nModel number [bold][1][/bold]: ").strip()
+    if choice in ("", "1"):
+        model = MODELS[0][0]
+    elif choice in (str(i) for i in range(2, len(MODELS) + 1)):
+        model = MODELS[int(choice) - 1][0]
+    else:
+        console.print(f"[yellow]Invalid choice '{choice}', using default.[/yellow]")
+        model = DEFAULT_MODEL
+
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONFIG_PATH, "w") as f:
+        f.write(f'api_key = "{api_key}"\n')
+        f.write(f'model = "{model}"\n')
+
+    console.print(f"\n[green]Config saved to {CONFIG_PATH}[/green]\n")
+    return {"api_key": api_key, "model": model}
 
 
 def get_settings(config: dict) -> tuple[str, str]:
     api_key = config.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        console.print(
-            "[bold red]Error:[/] No API key found.\n"
-            "Set ANTHROPIC_API_KEY or add api_key to config file:\n"
-            f"  {CONFIG_PATHS[0]}\n"
-        )
-        sys.exit(1)
-    model = config.get("model", "claude-sonnet-4-20250514")
+        config = run_setup()
+        api_key = config["api_key"]
+    model = config.get("model", DEFAULT_MODEL)
     return api_key, model
 
 
@@ -138,15 +177,9 @@ def main():
     )
     parser.add_argument("question", nargs="*", help="Your question (or omit for interactive mode)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show tool outputs")
-    parser.add_argument("--config", help="Path to config file (TOML)")
     args = parser.parse_args()
 
-    config = {}
-    if args.config:
-        with open(args.config, "rb") as f:
-            config = tomllib.load(f)
-    else:
-        config = load_config()
+    config = load_config()
 
     api_key, model = get_settings(config)
 
