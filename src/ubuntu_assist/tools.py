@@ -182,6 +182,31 @@ def tool_which(command: str) -> str:
     return _run(["which", command])
 
 
+def tool_journalctl(
+    unit: str | None = None,
+    lines: int = 100,
+    priority: str | None = None,
+    since: str | None = None,
+    grep: str | None = None,
+) -> str:
+    """Query the systemd journal (journalctl)."""
+    cmd = ["journalctl", "--no-pager", "-n", str(lines)]
+    
+    if unit:
+        cmd.extend(["-u", unit])
+    
+    if priority:
+        cmd.extend(["-p", priority])
+    
+    if since:
+        cmd.extend(["--since", since])
+    
+    if grep:
+        cmd.extend(["--grep", grep])
+    
+    return _run(cmd, timeout=30)
+
+
 # ---------------------------------------------------------------------------
 # Tool schema for the API
 # ---------------------------------------------------------------------------
@@ -358,6 +383,20 @@ TOOLS_SCHEMA = [
             "required": ["command"],
         },
     },
+    {
+        "name": "journalctl",
+        "description": "Query the systemd journal logs. View system and service logs with filtering options.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "unit": {"type": "string", "description": "Filter by systemd unit/service name, e.g. 'nginx.service', 'ssh'"},
+                "lines": {"type": "integer", "description": "Number of lines to show (default 100)", "default": 100},
+                "priority": {"type": "string", "description": "Filter by priority: 'emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug' or numeric 0-7"},
+                "since": {"type": "string", "description": "Show entries since this time, e.g. 'today', 'yesterday', '1 hour ago', '2024-03-27 10:00:00'"},
+                "grep": {"type": "string", "description": "Filter log entries matching this pattern (case-insensitive)"},
+            },
+        },
+    },
 ]
 
 
@@ -379,6 +418,13 @@ _DISPATCH = {
     "check_updates": lambda args: tool_check_updates(),
     "system_info": lambda args: tool_system_info(),
     "which": lambda args: tool_which(args["command"]),
+    "journalctl": lambda args: tool_journalctl(
+        args.get("unit"),
+        args.get("lines", 100),
+        args.get("priority"),
+        args.get("since"),
+        args.get("grep"),
+    ),
 }
 
 

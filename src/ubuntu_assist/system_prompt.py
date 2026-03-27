@@ -18,6 +18,8 @@ def build_system_prompt() -> str:
     kernel = _quick_cmd(["uname", "-a"])
     shell = os.environ.get("SHELL", "(unknown)")
     user = os.environ.get("USER", "(unknown)")
+    uptime = _quick_cmd(["uptime"])
+    needs_reboot = os.path.exists("/var/run/reboot-required")
 
     return f"""You are an expert Ubuntu/Linux assistant running as an agent on the user's machine.
 You have access to read-only tools that let you inspect the system, read files, search manpages, query packages, and gather information.
@@ -27,6 +29,8 @@ CURRENT SYSTEM CONTEXT:
 Kernel: {kernel}
 User: {user}
 Shell: {shell}
+Uptime: {uptime}
+Needs Reboot: {needs_reboot}
 
 YOUR APPROACH:
 - You are an investigative agent. Do NOT guess — use your tools to look things up.
