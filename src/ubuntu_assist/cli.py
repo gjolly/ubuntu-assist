@@ -14,6 +14,8 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
 
 from ubuntu_assist.tools import TOOLS_SCHEMA, execute_tool
 from ubuntu_assist.system_prompt import build_system_prompt
@@ -237,9 +239,10 @@ def main():
         # Interactive mode
         console.print("[dim]Interactive mode. Type 'exit' or Ctrl+C to quit.[/dim]\n")
         session_tokens = {"input": 0, "output": 0}
+        prompt_session = PromptSession(history=InMemoryHistory())
         while True:
             try:
-                question = console.input("[bold green]❯[/bold green] ")
+                question = prompt_session.prompt("❯ ")
                 if question.strip().lower() in ("exit", "quit", "q"):
                     if session_tokens["input"] > 0 or session_tokens["output"] > 0:
                         console.print()
