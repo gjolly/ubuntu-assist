@@ -158,6 +158,15 @@ def tool_systemctl_status(unit: str = "") -> str:
         return _run(["systemctl", "list-units", "--no-pager", "--type=service", "--state=running"])
 
 
+def tool_systemctl_show(unit: str, property: str | None = None) -> str:
+    """Show detailed properties of a systemd unit."""
+    cmd = ["systemctl", "show", "--no-pager"]
+    if property:
+        cmd.extend(["-p", property])
+    cmd.append(unit)
+    return _run(cmd)
+
+
 def tool_check_updates() -> str:
     """Check for available package updates."""
     return _run(["apt", "list", "--upgradable"], timeout=20)
@@ -205,6 +214,43 @@ def tool_journalctl(
         cmd.extend(["--grep", grep])
     
     return _run(cmd, timeout=30)
+
+
+def tool_ps(
+    filter_pattern: str | None = None,
+    show_all: bool = True,
+    sort_by: str = "cpu",
+) -> str:
+    """List running processes with optional regex filtering."""
+    # Use aux for detailed output: all processes, user-oriented format
+    cmd = ["ps", "aux" if show_all else "ux"]
+    
+    # Add sorting
+    if sort_by in ["cpu", "mem", "time"]:
+        cmd.extend(["--sort", f"-{sort_by}"])
+    
+    result = _run(cmd, timeout=10)
+    
+    # Apply regex filter if provided
+    if filter_pattern:
+        try:
+            import re
+            lines = result.split("\n")
+            if lines:
+                header = lines[0]
+                pattern = re.compile(filter_pattern)
+                filtered = [line for line in lines[1:] if line.strip() and pattern.search(line)]
+                
+                if filtered:
+                    result = header + "\n" + "\n".join(filtered)
+                else:
+                    result = header + "\n[No matching processes found]"
+        except re.error as e:
+            result = f"[Invalid regex pattern: {e}]\n{result}"
+        except Exception as e:
+            result = f"[Error applying filter: {e}]\n{result}"
+    
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +403,18 @@ TOOLS_SCHEMA = [
         },
     },
     {
+        "name": "systemctl_show",
+        "description": "Show detailed properties of a systemd unit. Returns key=value pairs with unit configuration and runtime state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "unit": {"type": "string", "description": "Service unit name, e.g. 'ssh.service', 'nginx.service'"},
+                "property": {"type": "string", "description": "Optional: specific property to show, e.g. 'ActiveState', 'MainPID', 'ExecStart'. Omit to show all properties."},
+            },
+            "required": ["unit"],
+        },
+    },
+    {
         "name": "check_updates",
         "description": "List available package updates.",
         "input_schema": {
@@ -397,6 +455,18 @@ TOOLS_SCHEMA = [
             },
         },
     },
+    {
+        "name": "ps",
+        "description": "List running processes with filtering and sorting. Shows PID, user, CPU, memory, and command details.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filter_pattern": {"type": "string", "description": "Regular expression to filter process output (applied via grep -E). Matches against entire lines."},
+                "show_all": {"type": "boolean", "description": "Show all processes (true) or just current user's processes (false). Default true.", "default": True},
+                "sort_by": {"type": "string", "description": "Sort by 'cpu', 'mem', or 'time'. Default 'cpu'.", "default": "cpu"},
+            },
+        },
+    },
 ]
 
 
@@ -415,6 +485,7 @@ _DISPATCH = {
     "snap_info": lambda args: tool_snap_info(args["snap_name"]),
     "list_installed_snaps": lambda args: tool_list_installed_snaps(),
     "systemctl_status": lambda args: tool_systemctl_status(args.get("unit", "")),
+    "systemctl_show": lambda args: tool_systemctl_show(args["unit"], args.get("property")),
     "check_updates": lambda args: tool_check_updates(),
     "system_info": lambda args: tool_system_info(),
     "which": lambda args: tool_which(args["command"]),
@@ -424,6 +495,11 @@ _DISPATCH = {
         args.get("priority"),
         args.get("since"),
         args.get("grep"),
+    ),
+    "ps": lambda args: tool_ps(
+        args.get("filter_pattern"),
+        args.get("show_all", True),
+        args.get("sort_by", "cpu"),
     ),
 }
 
